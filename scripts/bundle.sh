@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="MeetingBrief"
 BUNDLE_ID="io.poppins.meetingbrief"
-VERSION="0.1.0"
+VERSION="1.0.0"
 
 cd "$(dirname "$0")/.."
 
@@ -56,7 +56,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>" || true)
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>26.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
