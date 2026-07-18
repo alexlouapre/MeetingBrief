@@ -2,9 +2,9 @@ import SwiftUI
 
 struct AnalysisReviewView: View {
     @EnvironmentObject var state: AppState
-    @AppStorage("obsidianPath") var obsidianPath: String = ""
-    @AppStorage("lastSlackDestinationIds") var lastSlackDestinationIdsString: String = ""
-    @AppStorage("favoriteSlackChannelIds") var favoriteChannelIdsString: String = ""
+    @AppStorage(Prefs.obsidianPath) var obsidianPath: String = ""
+    @AppStorage(Prefs.lastSlackDestinationIds) var lastSlackDestinationIdsString: String = ""
+    @AppStorage(Prefs.favoriteSlackChannelIds) var favoriteChannelIdsString: String = ""
 
     @State private var selectedIds: Set<String> = []
     @State private var loadingChannels = false
@@ -355,37 +355,20 @@ struct AnalysisReviewView: View {
     private func loadChannels() async {
         loadingChannels = true
         defer { loadingChannels = false }
-        do {
-            let result = try await SlackService.listDestinations()
-            state.slackChannels = result.items
-            if let usersError = result.usersError {
-                state.errorMessage = "Utilisateurs Slack non chargés : \(usersError)"
-            }
-        } catch {
-            state.errorMessage = error.localizedDescription
-        }
+        await state.loadSlackChannels()
     }
 
     @MainActor
     private func send() async {
-        guard let analysis = state.analysis, !selectedIds.isEmpty else { return }
+        guard state.analysis != nil, !selectedIds.isEmpty else { return }
         state.errorMessage = nil
-        state.step = .sending
         do {
-            try ObsidianService.writeNote(
-                analysis: analysis,
-                folderPath: trimmedObsidianPath
-            )
-            let slackText = ObsidianService.renderSlackMessage(analysis: analysis)
-            for id in selectedIds {
-                try await SlackService.postMessage(channelId: id, text: slackText)
-            }
-            lastSlackDestinationIdsString = selectedIds.sorted().joined(separator: ",")
-            state.step = .done
+            try state.writeNoteToObsidian()
         } catch {
             state.errorMessage = error.localizedDescription
-            state.step = .review
+            return
         }
+        await state.postToSlack(destinationIds: selectedIds)
     }
 }
 
