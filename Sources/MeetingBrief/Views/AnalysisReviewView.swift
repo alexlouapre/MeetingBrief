@@ -372,12 +372,11 @@ struct AnalysisReviewView: View {
         state.errorMessage = nil
         state.step = .sending
         do {
-            let fileURL = try ObsidianService.writeNote(
+            try ObsidianService.writeNote(
                 analysis: analysis,
-                transcript: state.transcript,
                 folderPath: trimmedObsidianPath
             )
-            let slackText = ObsidianService.renderSlackMessage(analysis: analysis, fileURL: fileURL)
+            let slackText = ObsidianService.renderSlackMessage(analysis: analysis)
             for id in selectedIds {
                 try await SlackService.postMessage(channelId: id, text: slackText)
             }

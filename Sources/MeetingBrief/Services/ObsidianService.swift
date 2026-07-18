@@ -14,7 +14,7 @@ enum ObsidianError: Error, LocalizedError {
 
 struct ObsidianService {
     @discardableResult
-    static func writeNote(analysis: MeetingAnalysis, transcript: String, folderPath: String) throws -> URL {
+    static func writeNote(analysis: MeetingAnalysis, folderPath: String) throws -> URL {
         guard !folderPath.isEmpty else { throw ObsidianError.missingPath }
 
         let expanded = (folderPath as NSString).expandingTildeInPath
@@ -28,7 +28,7 @@ struct ObsidianService {
         let filename = "\(dateStr)-\(slug).md"
         let fileURL = folder.appendingPathComponent(filename)
 
-        let markdown = renderMarkdown(analysis: analysis, transcript: transcript)
+        let markdown = renderMarkdown(analysis: analysis)
         do {
             try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
@@ -37,7 +37,7 @@ struct ObsidianService {
         return fileURL
     }
 
-    static func renderMarkdown(analysis: MeetingAnalysis, transcript: String) -> String {
+    static func renderMarkdown(analysis: MeetingAnalysis) -> String {
         var s = ""
         s += "---\n"
         s += "type: meeting\n"
@@ -91,7 +91,7 @@ struct ObsidianService {
         return s
     }
 
-    static func renderSlackMessage(analysis: MeetingAnalysis, fileURL: URL?) -> String {
+    static func renderSlackMessage(analysis: MeetingAnalysis) -> String {
         var parts: [String] = []
         parts.append("Meeting — \(frenchLongDate(analysis.date))")
 

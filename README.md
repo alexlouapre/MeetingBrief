@@ -6,22 +6,22 @@ App **menu-bar macOS** qui transforme un transcript de réunion en note **Obsidi
 
 1. Clic sur l'icône dans la barre des menus
 2. Coller le transcript
-3. Claude extrait : **sujets**, **décisions**, **actions**
+3. Claude extrait : **résumé**, **sections**, **décisions**, **actions**
 4. Valider / éditer
 5. La note est écrite dans le vault Obsidian + un message part sur Slack
 
 ## Stack
 
-- SwiftUI + `MenuBarExtra` (macOS 13+)
+- SwiftUI + `MenuBarExtra` (macOS 26+)
 - Swift Package Manager (pas d'Xcode project nécessaire)
-- Claude API (`claude-sonnet-4-6`)
+- Claude API (`claude-haiku-4-5-20251001`)
 - Slack Web API (bot token)
 - Fichier local chiffré par FileVault pour les secrets (`~/Library/Application Support/MeetingBrief/secrets.json`, permissions 600)
-- UserDefaults pour les préférences non-sensibles (chemin Obsidian, channel Slack)
+- UserDefaults pour les préférences non-sensibles (chemin Obsidian, destinations Slack)
 
 ## Prérequis
 
-- macOS 13 (Ventura) ou supérieur
+- macOS 26 (Tahoe) ou supérieur
 - Xcode command-line tools : `xcode-select --install`
 - Une clé API Claude (`sk-ant-…`) — [console.anthropic.com](https://console.anthropic.com)
 - Un Slack Bot Token (`xoxb-…`) — voir ci-dessous
@@ -64,21 +64,23 @@ swift run
    - `chat:write` — poster des messages
    - `channels:read` — lister les channels publics
    - `groups:read` — lister les channels privés
+   - `users:read` — lister les utilisateurs (envoi en DM)
+   - `im:write` — ouvrir une conversation DM
 4. **Install to Workspace** → autoriser → copier le *Bot User OAuth Token* (`xoxb-…`)
 5. Inviter le bot dans le(s) channel(s) cible(s) : `/invite @MeetingBrief` dans Slack
 
-Colle le token dans l'app (Réglages) puis clique *"Charger les channels"*.
+Colle le token dans l'app (Réglages) puis clique *"Charger les destinations"*.
 
 ## Configuration
 
 Dans l'app, clique sur ⚙︎ :
 
-| Champ            | Stockage     | Exemple                       |
-| ---------------- | ------------ | ----------------------------- |
-| Clé API Claude   | secrets.json | `sk-ant-…`                    |
-| Slack Bot Token  | secrets.json | `xoxb-…`                      |
-| Channel Slack    | UserDefaults | `#ops-meetings`               |
-| Dossier Obsidian | UserDefaults | `~/BriocheBrain/1-notes`      |
+| Champ              | Stockage     | Exemple                       |
+| ------------------ | ------------ | ----------------------------- |
+| Clé API Claude     | secrets.json | `sk-ant-…`                    |
+| Slack Bot Token    | secrets.json | `xoxb-…`                      |
+| Destinations Slack | UserDefaults | `#ops-meetings`, `@alex`      |
+| Dossier Obsidian   | UserDefaults | `~/BriocheBrain/1-notes`      |
 
 ## Format de la note générée
 
@@ -87,29 +89,41 @@ Dans l'app, clique sur ⚙︎ :
 type: meeting
 date: 2026-04-17
 titre: Réunion kickoff X
+participants:
+  - Alex
+  - Greg
+tags:
+  - projet-x
 ---
 
 # Réunion kickoff X
 
-## Résumé
-…
+> [!summary] Résumé
+> …
 
-## Sujets
-- Sujet 1
-- Sujet 2
+### Sujet 1
+- Point discuté
+- Autre point
 
-## Décisions
-- **[Greg]** Partir sur la v2 — _implications : refonte API_
+**Décisions**
+- Partir sur la v2
 
-## Actions
-- [ ] **[Alex]** Préparer le plan — échéance : 2026-04-24
+**Pistes / idées**
+- …
 
-## Transcript brut
-<details>…</details>
+**Questions ouvertes**
+- …
+
+### Actions
+
+**Alex**
+[ ] Préparer le plan
+
+**Greg**
+[ ] Refonte API
 ```
 
-Les cases `- [ ]` sont compatibles avec le plugin Obsidian *Tasks*.
-Le nom de fichier est `YYYY-MM-DD-titre-slugifie.md`.
+Les actions sont groupées par responsable. Le nom de fichier est `YYYY-MM-DD-titre-slugifie.md`.
 
 ## Build
 
