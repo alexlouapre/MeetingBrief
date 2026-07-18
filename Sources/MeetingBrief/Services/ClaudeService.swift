@@ -15,7 +15,7 @@ enum ClaudeError: Error, LocalizedError {
 }
 
 struct ClaudeService {
-    static let model = "claude-haiku-4-5-20251001"
+    static let model = "claude-sonnet-5"
     static let apiVersion = "2023-06-01"
     static let url = URL(string: "https://api.anthropic.com/v1/messages")!
 
