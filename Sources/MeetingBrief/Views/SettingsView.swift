@@ -3,8 +3,10 @@ import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
-    @AppStorage("obsidianPath") var obsidianPath: String = ""
-    @AppStorage("favoriteSlackChannelIds") var favoriteChannelIdsString: String = ""
+    @AppStorage(Prefs.obsidianPath) var obsidianPath: String = ""
+    @AppStorage(Prefs.favoriteSlackChannelIds) var favoriteChannelIdsString: String = ""
+    @AppStorage(Prefs.validationStepEnabled) var validationStepEnabled: Bool = false
+    @AppStorage(Prefs.slackEnabled) var slackEnabled: Bool = true
 
     @State private var claudeKey: String = ""
     @State private var slackToken: String = ""
@@ -140,6 +142,19 @@ struct SettingsView: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(Color.secondary.opacity(0.2))
                         )
+                    }
+                }
+
+                section("Flux") {
+                    Toggle("Étape de validation avant envoi", isOn: $validationStepEnabled)
+                    Text("Si activé, l'analyse s'ouvre en mode relecture avant d'écrire la note. Sinon la note part directement dans Obsidian.")
+                        .font(.caption).foregroundColor(.secondary)
+                    Toggle("Publication Slack", isOn: $slackEnabled)
+                    Text("Si désactivé, le flux se termine après l'écriture de la note (pas de picker Slack).")
+                        .font(.caption).foregroundColor(.secondary)
+                    Button("Relancer l'onboarding") {
+                        UserDefaults.standard.set(false, forKey: Prefs.hasCompletedOnboarding)
+                        state.step = .onboarding
                     }
                 }
 
