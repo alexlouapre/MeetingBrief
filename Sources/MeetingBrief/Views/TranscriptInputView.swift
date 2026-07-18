@@ -43,10 +43,8 @@ struct TranscriptInputView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovering ? Color.primary.opacity(0.03) : Color.clear)
-            )
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+            .opacity(isHovering ? 1.0 : 0.92)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -71,6 +69,7 @@ struct TranscriptInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.secondary.opacity(0.25))
@@ -85,11 +84,11 @@ struct TranscriptInputView: View {
                     state.cancelAutoAnalyze()
                     state.transcript = ""
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
                 Button("Analyser") {
                     state.triggerAnalyze()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(state.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -105,13 +104,9 @@ struct TranscriptInputView: View {
             Button("Annuler") { state.cancelAutoAnalyze() }
                 .buttonStyle(.plain)
         }
-        .padding(10)
-        .background(Color.accentColor.opacity(0.1))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.accentColor.opacity(0.3))
-        )
-        .cornerRadius(6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.tint(.accentColor.opacity(0.35)), in: Capsule())
     }
 
     // MARK: - Actions

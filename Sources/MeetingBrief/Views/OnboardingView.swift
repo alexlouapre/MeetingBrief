@@ -16,17 +16,25 @@ struct OnboardingView: View {
     @State private var testingClaude = false
     @State private var slackToken: String = ""
     @State private var loadingChannels = false
+    @Namespace private var glassNamespace
 
     private let pageCount = 7
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                pageContent
-                    .padding(24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                GlassEffectContainer {
+                    pageContent
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(cornerRadius: 20)
+                        .glassEffectID("onboarding-page", in: glassNamespace)
+                        .glassEffectTransition(.matchedGeometry)
+                }
+                .padding(4)
             }
             .scrollEdgeEffectStyle(.soft, for: .vertical)
+            .animation(.easeInOut(duration: 0.25), value: currentPage)
 
             Divider()
             footer
@@ -255,6 +263,7 @@ struct OnboardingView: View {
         HStack {
             if currentPage > 0 {
                 Button("Retour") { withAnimation { currentPage -= 1 } }
+                    .buttonStyle(.glass)
             }
             Spacer()
             pageDots
@@ -264,11 +273,11 @@ struct OnboardingView: View {
                     commitCurrentPage()
                     withAnimation { currentPage += 1 }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(!canGoNext)
             } else {
                 Button("C'est parti") { finish() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
             }
         }
         .padding(.horizontal, 20)

@@ -9,6 +9,7 @@ struct AnalysisReviewView: View {
     @State private var selectedIds: Set<String> = []
     @State private var loadingChannels = false
     @State private var showTranscript = false
+    @Namespace private var glassNamespace
 
     private var trimmedObsidianPath: String {
         obsidianPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -64,16 +65,18 @@ struct AnalysisReviewView: View {
 
                     HStack {
                         Button("Annuler") { state.reset() }
+                            .buttonStyle(.glass)
                         Spacer()
                         Button("J'ai vérifié — Envoyer") {
                             Task { await send() }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .disabled(!canSend)
                     }
                 }
             }
         }
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .onAppear {
             if selectedIds.isEmpty {
                 let lastIds = lastSlackDestinationIdsString
@@ -121,8 +124,12 @@ struct AnalysisReviewView: View {
 
     private var destinationsPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(selectedDestinations) { dest in
-                destinationChip(dest)
+            GlassEffectContainer(spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(selectedDestinations) { dest in
+                        destinationChip(dest)
+                    }
+                }
             }
 
             Menu {
@@ -159,12 +166,10 @@ struct AnalysisReviewView: View {
             .buttonStyle(.plain)
             .help("Retirer cette destination")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.1))
-        )
+        .glassEffect(.regular, in: Capsule())
+        .glassEffectUnion(id: "destination-chips", namespace: glassNamespace)
     }
 
     private func warning(_ text: String) -> some View {
@@ -186,13 +191,7 @@ struct AnalysisReviewView: View {
             }
             Spacer()
         }
-        .padding(10)
-        .background(Color.orange.opacity(0.12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.orange.opacity(0.4), lineWidth: 1)
-        )
-        .cornerRadius(6)
+        .glassCard(cornerRadius: 10, tint: .orange.opacity(0.3))
     }
 
     private var transcriptDisclosure: some View {

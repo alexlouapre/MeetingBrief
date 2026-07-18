@@ -29,12 +29,13 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let err = state.errorMessage {
-                Divider()
                 Text(err)
                     .font(.caption)
                     .foregroundColor(.red)
-                    .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassCard(cornerRadius: 10, tint: .red.opacity(0.4))
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
             }
         }
         .onAppear {
@@ -51,24 +52,30 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 10) {
             Text("MeetingBrief").font(.headline)
             Spacer()
-            if state.step == .settings {
-                Button("Retour") { state.step = .input }
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 10) {
+                    if state.step == .settings {
+                        Button("Retour") { state.step = .input }
+                            .buttonStyle(.glass)
+                    } else if state.step != .onboarding {
+                        Button { state.step = .settings } label: {
+                            Image(systemName: "gear")
+                                .glassCircleIcon()
+                        }
+                        .buttonStyle(.plain)
+                        .help("Réglages")
+                    }
+                    Button { NSApp.keyWindow?.close() } label: {
+                        Image(systemName: "xmark")
+                            .glassCircleIcon()
+                    }
                     .buttonStyle(.plain)
-            } else if state.step != .onboarding {
-                Button { state.step = .settings } label: {
-                    Image(systemName: "gear")
+                    .help("Fermer")
                 }
-                .buttonStyle(.plain)
-                .help("Réglages")
             }
-            Button { NSApp.keyWindow?.close() } label: {
-                Image(systemName: "xmark.circle")
-            }
-            .buttonStyle(.plain)
-            .help("Fermer")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -104,9 +111,10 @@ struct ContentView: View {
                 Button("Ouvrir la note") {
                     NSWorkspace.shared.open(url)
                 }
+                .buttonStyle(.glass)
             }
             Button("Nouveau meeting") { state.reset() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
         }
     }
 }
@@ -134,11 +142,13 @@ struct SaveFailedView: View {
                         NSPasteboard.general.setString(md, forType: .string)
                     }
                 }
+                .buttonStyle(.glass)
                 Button("Ouvrir Réglages") { state.step = .settings }
+                    .buttonStyle(.glass)
                 Button("Réessayer") {
                     Task { await state.saveNoteAndAdvance() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
         }
     }

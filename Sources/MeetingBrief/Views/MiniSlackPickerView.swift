@@ -10,6 +10,7 @@ struct MiniSlackPickerView: View {
 
     @State private var selectedIds: Set<String> = []
     @State private var loadingChannels = false
+    @Namespace private var glassNamespace
 
     private var visibleDestinations: [SlackChannel] {
         let favs = Set(favoriteChannelIdsString.split(separator: ",").map(String.init).filter { !$0.isEmpty })
@@ -28,8 +29,7 @@ struct MiniSlackPickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-
-            Divider()
+                .glassCard()
 
             Text("Partager sur Slack ?")
                 .font(.subheadline.weight(.semibold))
@@ -38,11 +38,12 @@ struct MiniSlackPickerView: View {
 
             HStack {
                 Button("Passer") { state.step = .done }
+                    .buttonStyle(.glass)
                 Spacer()
                 Button("Envoyer sur Slack") {
                     Task { await state.postToSlack(destinationIds: selectedIds) }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(selectedIds.isEmpty)
             }
         }
@@ -107,8 +108,12 @@ struct MiniSlackPickerView: View {
 
     private var destinationsPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(selectedDestinations) { dest in
-                destinationChip(dest)
+            GlassEffectContainer(spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(selectedDestinations) { dest in
+                        destinationChip(dest)
+                    }
+                }
             }
 
             Menu {
@@ -145,11 +150,9 @@ struct MiniSlackPickerView: View {
             .buttonStyle(.plain)
             .help("Retirer cette destination")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.1))
-        )
+        .glassEffect(.regular, in: Capsule())
+        .glassEffectUnion(id: "picker-chips", namespace: glassNamespace)
     }
 }

@@ -173,6 +173,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .onAppear {
             claudeKey = SecretStore.get("claude_api_key") ?? ""
             slackToken = SecretStore.get("slack_bot_token") ?? ""
@@ -185,6 +186,8 @@ struct SettingsView: View {
             Text(title).font(.subheadline).bold()
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
     }
 
     private func pickFolder() {
