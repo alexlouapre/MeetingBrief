@@ -16,7 +16,7 @@ App **menu-bar macOS** qui transforme un transcript de réunion en note **Obsidi
 - Swift Package Manager (pas d'Xcode project nécessaire)
 - Claude API (`claude-sonnet-4-6`)
 - Slack Web API (bot token)
-- Keychain macOS pour les secrets (clé Claude, token Slack)
+- Fichier local chiffré par FileVault pour les secrets (`~/Library/Application Support/MeetingBrief/secrets.json`, permissions 600)
 - UserDefaults pour les préférences non-sensibles (chemin Obsidian, channel Slack)
 
 ## Prérequis
@@ -26,15 +26,35 @@ App **menu-bar macOS** qui transforme un transcript de réunion en note **Obsidi
 - Une clé API Claude (`sk-ant-…`) — [console.anthropic.com](https://console.anthropic.com)
 - Un Slack Bot Token (`xoxb-…`) — voir ci-dessous
 
-## Lancer l'app
+## Installation (daily driver)
 
 ```bash
 cd MeetingBrief
-swift run
+./scripts/install.sh
 ```
 
-L'icône (🔍 document) apparaît dans la barre des menus. Clic → popover.
-Pour quitter l'app, clic sur la croix dans le header du popover.
+Ça :
+1. Compile le binaire en release
+2. Empaquette en `MeetingBrief.app` (bundle macOS signé ad-hoc)
+3. Copie dans `/Applications`
+4. Active le lancement auto à la session (via LaunchAgent)
+5. Lance l'app immédiatement
+
+L'icône 🔍 apparaît dans la barre des menus. Au prochain reboot, l'app démarrera toute seule.
+
+**Désinstaller :**
+```bash
+launchctl unload ~/Library/LaunchAgents/io.poppins.meetingbrief.plist
+rm -rf /Applications/MeetingBrief.app ~/Library/LaunchAgents/io.poppins.meetingbrief.plist
+```
+
+## Lancer en mode dev
+
+Pour itérer sur le code sans installer :
+
+```bash
+swift run
+```
 
 ## Créer l'app Slack (5 min, une fois)
 
@@ -55,8 +75,8 @@ Dans l'app, clique sur ⚙︎ :
 
 | Champ            | Stockage     | Exemple                       |
 | ---------------- | ------------ | ----------------------------- |
-| Clé API Claude   | Keychain     | `sk-ant-…`                    |
-| Slack Bot Token  | Keychain     | `xoxb-…`                      |
+| Clé API Claude   | secrets.json | `sk-ant-…`                    |
+| Slack Bot Token  | secrets.json | `xoxb-…`                      |
 | Channel Slack    | UserDefaults | `#ops-meetings`               |
 | Dossier Obsidian | UserDefaults | `~/BriocheBrain/1-notes`      |
 
@@ -99,11 +119,10 @@ swift build -c release    # release (binaire dans .build/release/MeetingBrief)
 swift run                 # compile + lance
 ```
 
-## Limites MVP (volontairement simples)
+## Limites MVP
 
-- Pas de sandbox, pas de signature → le binaire tourne uniquement sur ta machine. Pour distribuer, il faudra signer/notariser.
-- Le binaire `swift run` n'est pas un `.app` standalone ; il faut relancer depuis le terminal après un reboot. Pour un lancement auto, on bundlera en `.app` plus tard.
-- Pas de persistance des transcripts : quand l'app est relancée, l'écran d'input est vide.
+- Signature ad-hoc uniquement (pas de notarization Apple). Gatekeeper peut afficher un avertissement au premier lancement — clic-droit sur l'app → *Ouvrir* pour bypass une fois.
+- Pas de persistance du transcript : si l'app crash pendant l'analyse, le paste est perdu. Workaround : garde le transcript dans ton presse-papiers jusqu'à l'envoi.
 - Édition inline simple (ajout/suppression/modification d'items), pas de drag & drop.
 
 ## Licence

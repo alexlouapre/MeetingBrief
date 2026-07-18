@@ -3,6 +3,7 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,7 +13,7 @@ struct ContentView: View {
             Group {
                 switch state.step {
                 case .input:     TranscriptInputView()
-                case .analyzing: progressView("Analyse en cours…")
+                case .analyzing: analyzingView
                 case .review:    AnalysisReviewView()
                 case .sending:   progressView("Envoi vers Obsidian et Slack…")
                 case .done:      doneView
@@ -31,6 +32,16 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .background(paperBackground)
+        .onAppear {
+            Task { await NotificationService.requestAuthIfNeeded() }
+        }
+    }
+
+    private var paperBackground: Color {
+        colorScheme == .dark
+            ? Color(red: 0.12, green: 0.12, blue: 0.13)
+            : Color.white
     }
 
     private var header: some View {
@@ -47,11 +58,11 @@ struct ContentView: View {
                 Button("Retour") { state.step = .input }
                     .buttonStyle(.plain)
             }
-            Button { NSApp.terminate(nil) } label: {
+            Button { NSApp.keyWindow?.close() } label: {
                 Image(systemName: "xmark.circle")
             }
             .buttonStyle(.plain)
-            .help("Quitter")
+            .help("Fermer")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -61,6 +72,19 @@ struct ContentView: View {
         VStack(spacing: 12) {
             ProgressView()
             Text(label).foregroundColor(.secondary)
+        }
+    }
+
+    private var analyzingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Analyse en cours…").foregroundColor(.secondary)
+            if state.analyzeReceivedChars > 0 {
+                Text("\(state.analyzeReceivedChars) caractères reçus")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
         }
     }
 

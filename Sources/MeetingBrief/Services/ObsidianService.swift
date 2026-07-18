@@ -43,85 +43,127 @@ struct ObsidianService {
         s += "type: meeting\n"
         s += "date: \(analysis.date)\n"
         s += "titre: \(escapeYAML(analysis.titre))\n"
+        let participants = analysis.participants.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if !participants.isEmpty {
+            s += "participants:\n\(yamlList(participants))\n"
+        }
+        let sujets = analysis.sujets.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if !sujets.isEmpty {
+            s += "tags:\n\(yamlList(sujets))\n"
+        }
         s += "---\n\n"
         s += "# \(analysis.titre)\n\n"
 
-        if !analysis.resume.isEmpty {
-            s += "## Résumé\n\n\(analysis.resume)\n\n"
-        }
-
-        s += "## Sujets\n\n"
-        if analysis.sujets.isEmpty {
-            s += "_Aucun sujet identifié._\n\n"
-        } else {
-            for sujet in analysis.sujets { s += "- \(sujet)\n" }
-            s += "\n"
-        }
-
-        s += "## Décisions\n\n"
-        if analysis.decisions.isEmpty {
-            s += "_Aucune décision identifiée._\n\n"
-        } else {
-            for d in analysis.decisions {
-                let resp = d.responsable.isEmpty ? "" : " **[\(d.responsable)]**"
-                var line = "-\(resp) \(d.contenu)"
-                if !d.implications.isEmpty {
-                    line += " — _implications : \(d.implications)_"
-                }
-                s += line + "\n"
+        let resume = analysis.resume.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !resume.isEmpty {
+            s += "> [!summary] Résumé\n"
+            for line in resume.split(separator: "\n", omittingEmptySubsequences: true) {
+                s += "> \(line)\n"
             }
             s += "\n"
         }
 
-        s += "## Actions\n\n"
+        for section in analysis.sections {
+            s += "### \(section.titre)\n"
+            for p in section.points where !p.isEmpty { s += "- \(p)\n" }
+            if section.decisions.contains(where: { !$0.isEmpty }) {
+                s += "\n**Décisions**\n"
+                for d in section.decisions where !d.isEmpty { s += "- \(d)\n" }
+            }
+            if section.pistes.contains(where: { !$0.isEmpty }) {
+                s += "\n**Pistes / idées**\n"
+                for p in section.pistes where !p.isEmpty { s += "- \(p)\n" }
+            }
+            if section.questionsOuvertes.contains(where: { !$0.isEmpty }) {
+                s += "\n**Questions ouvertes**\n"
+                for q in section.questionsOuvertes where !q.isEmpty { s += "- \(q)\n" }
+            }
+            s += "\n"
+        }
+
+        s += "### Actions\n\n"
         if analysis.actions.isEmpty {
-            s += "_Aucune action identifiée._\n\n"
+            s += "_Aucune action identifiée._\n"
         } else {
-            for a in analysis.actions {
-                let resp = a.responsable.isEmpty ? "" : " **[\(a.responsable)]**"
-                let ech = a.echeance.isEmpty ? "" : " — échéance : \(a.echeance)"
-                s += "- [ ]\(resp) \(a.tache)\(ech)\n"
-            }
-            s += "\n"
+            s += renderActionsGrouped(analysis.actions, boldMarker: "**")
         }
-
-        s += "## Transcript brut\n\n"
-        s += "<details>\n<summary>Voir le transcript</summary>\n\n"
-        s += transcript
-        s += "\n\n</details>\n"
 
         return s
     }
 
     static func renderSlackMessage(analysis: MeetingAnalysis, fileURL: URL?) -> String {
-        var s = "*\(analysis.titre)* — \(analysis.date)\n\n"
-        if !analysis.resume.isEmpty {
-            s += "_\(analysis.resume)_\n\n"
+        var parts: [String] = []
+        parts.append("Meeting — \(frenchLongDate(analysis.date))")
+
+        if analysis.actions.isEmpty {
+            parts.append("Aucune action enregistrée suite au meeting.")
+            return parts.joined(separator: "\n\n")
         }
 
-        if !analysis.decisions.isEmpty {
-            s += "*Décisions*\n"
-            for d in analysis.decisions {
-                let resp = d.responsable.isEmpty ? "" : " [\(d.responsable)]"
-                s += "•\(resp) \(d.contenu)\n"
+        parts.append("Suite au meeting d'aujourd'hui, ces actions ont été enregistrées :")
+        parts.append(renderActionsGrouped(analysis.actions, boldMarker: "").trimmingCharacters(in: .newlines))
+
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// Groupe les actions par `responsable` (normalisé), trie par nombre d'actions desc
+    /// (tiebreak = ordre d'apparition), et rend un bloc texte :
+    ///
+    ///     **Prénom**
+    ///     [] tache1
+    ///     [] tache2
+    ///
+    /// `boldMarker` = `"**"` pour Obsidian, `"*"` pour Slack.
+    private static func renderActionsGrouped(_ actions: [ActionItem], boldMarker: String) -> String {
+        var order: [String] = []
+        var groups: [String: [ActionItem]] = [:]
+        for a in actions {
+            let key = formatResponsable(a.responsable)
+            if groups[key] == nil {
+                groups[key] = []
+                order.append(key)
             }
-            s += "\n"
+            groups[key]?.append(a)
         }
 
-        if !analysis.actions.isEmpty {
-            s += "*Actions*\n"
-            for a in analysis.actions {
-                let resp = a.responsable.isEmpty ? "" : " [\(a.responsable)]"
-                let ech = a.echeance.isEmpty ? "" : " (d'ici \(a.echeance))"
-                s += "•\(resp) \(a.tache)\(ech)\n"
+        // Preserve insertion order — le prompt demande au modèle de produire
+        // les actions dans l'ordre d'affichage souhaité (nb actions desc,
+        // binômes juste après la personne principale).
+        let sortedKeys = order
+
+        var out = ""
+        for (idx, key) in sortedKeys.enumerated() {
+            guard let acts = groups[key] else { continue }
+            out += "\(boldMarker)\(key)\(boldMarker)\n"
+            for a in acts {
+                out += "[ ] \(a.tache)\n"
             }
-            s += "\n"
+            if idx < sortedKeys.count - 1 {
+                out += "\n"
+            }
         }
+        return out
+    }
 
-        if let url = fileURL {
-            s += "_Note enregistrée : \(url.lastPathComponent)_"
-        }
-        return s
+    private static func formatResponsable(_ s: String) -> String {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return "Non assigné" }
+        let parts = trimmed
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return parts.count > 1 ? parts.joined(separator: " & ") : trimmed
+    }
+
+    private static func frenchLongDate(_ iso: String) -> String {
+        let inFmt = DateFormatter()
+        inFmt.dateFormat = "yyyy-MM-dd"
+        inFmt.locale = Locale(identifier: "en_US_POSIX")
+        guard let date = inFmt.date(from: iso) else { return iso }
+        let outFmt = DateFormatter()
+        outFmt.dateFormat = "d MMMM yyyy"
+        outFmt.locale = Locale(identifier: "fr_FR")
+        return outFmt.string(from: date)
     }
 
     private static func slugify(_ s: String) -> String {
@@ -140,11 +182,30 @@ struct ObsidianService {
     }
 
     private static func escapeYAML(_ s: String) -> String {
-        if s.contains(":") || s.contains("\"") || s.contains("#") {
-            let esc = s.replacingOccurrences(of: "\"", with: "\\\"")
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "\"\"" }
+        // Quote if the value contains structural chars, or starts with a YAML
+        // reserved indicator that would otherwise be misparsed in frontmatter.
+        let needsQuoteContains = trimmed.contains(":") || trimmed.contains("\"") || trimmed.contains("#")
+        let reservedFirstChars: Set<Character> = ["-", "?", "[", "]", "{", "}", ",", "&", "*", "!", "|", ">", "'", "%", "@", "`"]
+        let startsReserved = trimmed.first.map { reservedFirstChars.contains($0) } ?? false
+        let hasEdgeSpace = s != trimmed
+        if needsQuoteContains || startsReserved || hasEdgeSpace {
+            let esc = trimmed
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
             return "\"\(esc)\""
         }
-        return s
+        return trimmed
+    }
+
+    /// Renders a YAML block-sequence (one `  - value` per line), each value escaped.
+    private static func yamlList(_ items: [String]) -> String {
+        items
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { "  - \(escapeYAML($0))" }
+            .joined(separator: "\n")
     }
 
     private static func todayString() -> String {

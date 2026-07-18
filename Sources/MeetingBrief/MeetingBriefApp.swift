@@ -6,14 +6,14 @@ struct MeetingBriefApp: App {
     @StateObject private var state = AppState()
 
     init() {
-        NSApp.setActivationPolicy(.accessory)
+        NSApplication.shared.setActivationPolicy(.accessory)
     }
 
     var body: some Scene {
         MenuBarExtra("MeetingBrief", systemImage: "doc.text.magnifyingglass") {
             ContentView()
                 .environmentObject(state)
-                .frame(width: 540, height: 640)
+                .frame(width: 680, height: 760)
         }
         .menuBarExtraStyle(.window)
     }
