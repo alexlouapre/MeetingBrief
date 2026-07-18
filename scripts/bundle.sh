@@ -75,7 +75,7 @@ PLIST
 
 # Ad-hoc sign so macOS can track the binary identity across launches
 # (single Mach-O bundle — no --deep needed, and the flag is deprecated)
-codesign --force --sign - "$APP_DIR" 2>/dev/null || true
+codesign --force --sign - --identifier "$BUNDLE_ID" "$APP_DIR" 2>/dev/null || true
 
 echo "✓ App bundle created: $APP_DIR"
 echo ""
