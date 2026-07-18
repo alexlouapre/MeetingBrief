@@ -38,7 +38,7 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "→ Cloning $REPO…"
+echo "→ Cloning ${REPO}..."
 git clone --depth 1 "$REPO" "$TMP/MeetingBrief"
 
 bash "$TMP/MeetingBrief/scripts/install.sh"
