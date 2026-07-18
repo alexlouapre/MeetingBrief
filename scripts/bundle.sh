@@ -7,6 +7,12 @@ VERSION="1.0.0"
 
 cd "$(dirname "$0")/.."
 
+if ! xcode-select -p >/dev/null 2>&1; then
+    echo "Error: Xcode command-line tools are not installed."
+    echo "Run:  xcode-select --install"
+    exit 1
+fi
+
 echo "→ Building release binary…"
 swift build -c release
 
@@ -52,7 +58,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>
-    <string>APPL</string>$([ "$HAS_ICON" = "1" ] && echo "
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>$([ "$HAS_ICON" = "1" ] && echo "
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>" || true)
     <key>LSMinimumSystemVersion</key>
@@ -66,7 +74,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc sign so macOS can track the binary identity across launches
-codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
+# (single Mach-O bundle — no --deep needed, and the flag is deprecated)
+codesign --force --sign - "$APP_DIR" 2>/dev/null || true
 
 echo "✓ App bundle created: $APP_DIR"
 echo ""

@@ -25,8 +25,14 @@ struct ObsidianService {
 
         let slug = slugify(analysis.titre)
         let dateStr = analysis.date.isEmpty ? todayString() : analysis.date
-        let filename = "\(dateStr)-\(slug).md"
-        let fileURL = folder.appendingPathComponent(filename)
+        // Dé-dup : sans étape de review, écraser silencieusement une note existante
+        // serait une perte de données. YYYY-MM-DD-slug.md, puis -2, -3, …
+        var fileURL = folder.appendingPathComponent("\(dateStr)-\(slug).md")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: fileURL.path) {
+            fileURL = folder.appendingPathComponent("\(dateStr)-\(slug)-\(suffix).md")
+            suffix += 1
+        }
 
         let markdown = renderMarkdown(analysis: analysis)
         do {
