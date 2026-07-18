@@ -10,13 +10,13 @@ enum NotificationService {
         }
     }
 
-    static func postAnalysisReady() async {
+    static func post(body: String) async {
         let content = UNMutableNotificationContent()
         content.title = "MeetingBrief"
-        content.body = "Analyse prête — clique l'icône pour voir"
+        content.body = body
         content.sound = .default
         let req = UNNotificationRequest(
-            identifier: "meetingbrief.analysisReady",
+            identifier: "meetingbrief.\(UUID().uuidString)",
             content: content,
             trigger: nil
         )
