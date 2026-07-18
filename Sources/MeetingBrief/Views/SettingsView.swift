@@ -7,12 +7,17 @@ struct SettingsView: View {
     @AppStorage(Prefs.favoriteSlackChannelIds) var favoriteChannelIdsString: String = ""
     @AppStorage(Prefs.validationStepEnabled) var validationStepEnabled: Bool = false
     @AppStorage(Prefs.slackEnabled) var slackEnabled: Bool = true
+    @AppStorage(Prefs.llmProvider) var llmProvider: String = "anthropic"
+    @AppStorage(Prefs.llmModel) var llmModel: String = "claude-sonnet-5"
+    @AppStorage(Prefs.llmBaseURL) var llmBaseURL: String = ""
 
-    @State private var claudeKey: String = ""
+    @State private var apiKey: String = ""
     @State private var slackToken: String = ""
     @State private var loadingChannels = false
-    @State private var testingClaude = false
+    @State private var testingKey = false
     @State private var savedToast: String?
+
+    private var provider: LLMProvider { LLMProvider(rawValue: llmProvider) ?? .anthropic }
 
     private var favoriteChannelIds: Set<String> {
         Set(favoriteChannelIdsString.split(separator: ",").map(String.init).filter { !$0.isEmpty })
@@ -27,24 +32,48 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                section("Clé API Claude") {
-                    SecureField("sk-ant-…", text: $claudeKey)
+                section("Modèle & fournisseur") {
+                    Picker("Fournisseur", selection: $llmProvider) {
+                        Text("Claude (Anthropic)").tag(LLMProvider.anthropic.rawValue)
+                        Text("Compatible OpenAI").tag(LLMProvider.openaiCompatible.rawValue)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .onChange(of: llmProvider) {
+                        // Recharge la clé du bon slot pour ne pas mélanger les deux dialectes.
+                        apiKey = SecretStore.get(LLMService.secretKeyName(for: provider)) ?? ""
+                    }
+
+                    TextField(
+                        provider == .anthropic ? "claude-sonnet-5" : "gpt-4o",
+                        text: $llmModel
+                    )
+                    .textFieldStyle(.roundedBorder)
+
+                    if provider == .openaiCompatible {
+                        TextField("https://api.openai.com/v1", text: $llmBaseURL)
+                            .textFieldStyle(.roundedBorder)
+                        Text("URL de base de l'API (compatible OpenAI). Vide → https://api.openai.com/v1. Local Ollama : http://localhost:11434/v1.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+
+                    SecureField(provider == .anthropic ? "sk-ant-…" : "sk-…", text: $apiKey)
                         .textFieldStyle(.roundedBorder)
                     HStack {
                         Button("Enregistrer") {
-                            SecretStore.set(claudeKey, for: "claude_api_key")
-                            toast("Clé Claude enregistrée")
+                            SecretStore.set(apiKey, for: LLMService.secretKeyName(for: provider))
+                            toast("Clé enregistrée")
                         }
-                        Button(testingClaude ? "Test…" : "Tester") {
-                            Task { await testClaudeKey() }
+                        Button(testingKey ? "Test…" : "Tester") {
+                            Task { await testAPIKey() }
                         }
-                        .disabled(testingClaude || claudeKey.isEmpty)
+                        .disabled(testingKey || apiKey.isEmpty)
                         Button("Effacer") {
-                            SecretStore.delete("claude_api_key")
-                            claudeKey = ""
+                            SecretStore.delete(LLMService.secretKeyName(for: provider))
+                            apiKey = ""
                         }
                     }
-                    Text("Stockée dans ~/Library/Application Support/MeetingBrief/ (permissions 600).").font(.caption).foregroundColor(.secondary)
+                    Text("Clé stockée dans ~/Library/Application Support/MeetingBrief/ (permissions 600), une par fournisseur.").font(.caption).foregroundColor(.secondary)
                 }
 
                 section("Dossier Obsidian") {
@@ -175,7 +204,7 @@ struct SettingsView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .onAppear {
-            claudeKey = SecretStore.get("claude_api_key") ?? ""
+            apiKey = SecretStore.get(LLMService.secretKeyName(for: provider)) ?? ""
             slackToken = SecretStore.get("slack_bot_token") ?? ""
         }
     }
@@ -209,17 +238,17 @@ struct SettingsView: View {
     }
 
     @MainActor
-    private func testClaudeKey() async {
+    private func testAPIKey() async {
         state.errorMessage = nil
-        // Ensure the key is saved before testing
-        if !claudeKey.isEmpty {
-            SecretStore.set(claudeKey, for: "claude_api_key")
+        // Ensure the key is saved before testing (LLMService reads from SecretStore).
+        if !apiKey.isEmpty {
+            SecretStore.set(apiKey, for: LLMService.secretKeyName(for: provider))
         }
-        testingClaude = true
-        defer { testingClaude = false }
+        testingKey = true
+        defer { testingKey = false }
         do {
-            try await ClaudeService.testKey()
-            toast("✓ Clé Claude valide")
+            try await LLMService.testKey()
+            toast("✓ Clé valide")
         } catch {
             state.errorMessage = error.localizedDescription
         }

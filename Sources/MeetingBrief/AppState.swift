@@ -100,7 +100,7 @@ final class AppState: ObservableObject {
         analysisTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let analysis = try await ClaudeService.analyze(transcript: self.transcript) { chars in
+                let analysis = try await LLMService.analyze(transcript: self.transcript) { chars in
                     Task { @MainActor [weak self] in
                         self?.analyzeReceivedChars = chars
                     }

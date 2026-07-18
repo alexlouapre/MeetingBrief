@@ -1,40 +1,106 @@
 import Foundation
 
-enum ClaudeError: Error, LocalizedError {
+/// Deux dialectes API supportés : Anthropic natif, et tout serveur exposant l'API
+/// chat/completions compatible OpenAI (OpenAI, OpenRouter, Groq, Mistral, DeepSeek,
+/// Ollama/LM Studio en local). Seul le transport diffère — le prompt, le schéma et
+/// le décodage JSON sont partagés.
+enum LLMProvider: String {
+    case anthropic
+    case openaiCompatible = "openai_compatible"
+}
+
+enum LLMError: Error, LocalizedError {
     case missingKey
     case apiError(String)
     case parsingError(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingKey: return "Clé API Claude manquante. Configure-la dans Réglages."
-        case .apiError(let msg): return "Erreur API Claude : \(msg)"
-        case .parsingError(let msg): return "Impossible de parser la réponse de Claude : \(msg)"
+        case .missingKey: return "Clé API manquante. Configure-la dans Réglages."
+        case .apiError(let msg): return "Erreur API : \(msg)"
+        case .parsingError(let msg): return "Impossible de parser la réponse : \(msg)"
         }
     }
 }
 
-struct ClaudeService {
-    static let model = "claude-sonnet-5"
-    static let apiVersion = "2023-06-01"
-    static let url = URL(string: "https://api.anthropic.com/v1/messages")!
+struct LLMService {
+    static let anthropicVersion = "2023-06-01"
+    static let anthropicURL = URL(string: "https://api.anthropic.com/v1/messages")!
+    static let defaultOpenAIBaseURL = "https://api.openai.com/v1"
+
+    // MARK: - Configuration (lue à l'exécution)
+
+    static func currentProvider() -> LLMProvider {
+        let raw = UserDefaults.standard.string(forKey: Prefs.llmProvider) ?? LLMProvider.anthropic.rawValue
+        return LLMProvider(rawValue: raw) ?? .anthropic
+    }
+
+    static func currentModel() -> String {
+        let m = (UserDefaults.standard.string(forKey: Prefs.llmModel) ?? "").trimmingCharacters(in: .whitespaces)
+        return m.isEmpty ? "claude-sonnet-5" : m
+    }
+
+    /// Slot SecretStore pour le dialecte donné — une clé par dialecte, pour ne pas
+    /// perdre l'autre en basculant de provider.
+    static func secretKeyName(for provider: LLMProvider) -> String {
+        switch provider {
+        case .anthropic: return "claude_api_key"
+        case .openaiCompatible: return "openai_api_key"
+        }
+    }
+
+    /// Base URL normalisée (sans slash final) pour le dialecte openai.
+    static func currentOpenAIBaseURL() -> String {
+        let raw = (UserDefaults.standard.string(forKey: Prefs.llmBaseURL) ?? "").trimmingCharacters(in: .whitespaces)
+        let base = raw.isEmpty ? defaultOpenAIBaseURL : raw
+        return base.hasSuffix("/") ? String(base.dropLast()) : base
+    }
+
+    private static func apiKey(for provider: LLMProvider) throws -> String {
+        guard let key = SecretStore.get(secretKeyName(for: provider)), !key.isEmpty else {
+            throw LLMError.missingKey
+        }
+        return key
+    }
+
+    // MARK: - testKey
 
     static func testKey() async throws {
-        guard let key = SecretStore.get("claude_api_key"), !key.isEmpty else {
-            throw ClaudeError.missingKey
+        let provider = currentProvider()
+        let key = try apiKey(for: provider)
+        let model = currentModel()
+
+        var request: URLRequest
+        switch provider {
+        case .anthropic:
+            let body: [String: Any] = [
+                "model": model,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "ping"]]
+            ]
+            request = URLRequest(url: anthropicURL)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 15
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue(anthropicVersion, forHTTPHeaderField: "anthropic-version")
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        case .openaiCompatible:
+            guard let url = URL(string: currentOpenAIBaseURL() + "/chat/completions") else {
+                throw LLMError.apiError("URL de base invalide.")
+            }
+            let body: [String: Any] = [
+                "model": model,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "ping"]]
+            ]
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 15
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
-        let body: [String: Any] = [
-            "model": model,
-            "max_tokens": 1,
-            "messages": [["role": "user", "content": "ping"]]
-        ]
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 15
-        request.setValue(key, forHTTPHeaderField: "x-api-key")
-        request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
@@ -42,16 +108,18 @@ struct ClaudeService {
 
         let bodyStr = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
         switch http.statusCode {
-        case 401: throw ClaudeError.apiError("Clé invalide ou révoquée.")
-        case 429: throw ClaudeError.apiError("Limite de taux atteinte (la clé marche mais tu es throttlé).")
-        default: throw ClaudeError.apiError("HTTP \(http.statusCode) — \(bodyStr)")
+        case 401: throw LLMError.apiError("Clé invalide ou révoquée.")
+        case 429: throw LLMError.apiError("Limite de taux atteinte (la clé marche mais tu es throttlé).")
+        default: throw LLMError.apiError("HTTP \(http.statusCode) — \(bodyStr)")
         }
     }
 
+    // MARK: - analyze
+
     static func analyze(transcript: String, onProgress: (@Sendable (Int) -> Void)? = nil) async throws -> MeetingAnalysis {
-        guard let key = SecretStore.get("claude_api_key"), !key.isEmpty else {
-            throw ClaudeError.missingKey
-        }
+        let provider = currentProvider()
+        let key = try apiKey(for: provider)
+        let model = currentModel()
 
         let systemPrompt = """
         # RÔLE
@@ -204,24 +272,86 @@ struct ClaudeService {
         \(schema)
         """
 
+        // MARK: Transport (le seul qui diffère par dialecte)
+        let text: String
+        let stopReason: String?
+        switch provider {
+        case .anthropic:
+            (text, stopReason) = try await streamAnthropic(
+                key: key, model: model,
+                systemPrompt: systemPrompt, userPrompt: userPrompt,
+                onProgress: onProgress
+            )
+        case .openaiCompatible:
+            (text, stopReason) = try await streamOpenAI(
+                key: key, model: model, baseURL: currentOpenAIBaseURL(),
+                systemPrompt: systemPrompt, userPrompt: userPrompt,
+                onProgress: onProgress
+            )
+        }
+
+        // MARK: Décodage (partagé)
+        guard !text.isEmpty else {
+            throw LLMError.parsingError("réponse vide")
+        }
+        if stopReason == "max_tokens" || stopReason == "length" {
+            throw LLMError.apiError("Réponse tronquée (limite de tokens atteinte) — transcript trop long pour être analysé en un seul passage. Raccourcis le transcript.")
+        }
+
+        var jsonText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if jsonText.hasPrefix("```") {
+            jsonText = jsonText.replacingOccurrences(of: "```json", with: "")
+            jsonText = jsonText.replacingOccurrences(of: "```", with: "")
+            jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let first = jsonText.firstIndex(of: "{"), let last = jsonText.lastIndex(of: "}") {
+            jsonText = String(jsonText[first...last])
+        }
+
+        #if DEBUG
+        print("[LLMService] Raw response text (first 2000 chars):\n\(text.prefix(2000))")
+        print("[LLMService] Stop reason: \(stopReason ?? "nil")")
+        #endif
+
+        guard let jsonData = jsonText.data(using: .utf8) else {
+            throw LLMError.parsingError("encodage utf8")
+        }
+
+        do {
+            let analysis = try JSONDecoder().decode(MeetingAnalysis.self, from: jsonData)
+            return analysis
+        } catch let decodingError as DecodingError {
+            let head = String(jsonText.prefix(1000))
+            let tail = jsonText.count > 1500 ? " … [FIN] " + String(jsonText.suffix(500)) : ""
+            throw LLMError.parsingError("\(decodingError) — stop_reason=\(stopReason ?? "nil") — Réponse: \(head)\(tail)")
+        } catch {
+            throw error
+        }
+    }
+
+    // MARK: - Dialecte Anthropic
+
+    private static func streamAnthropic(
+        key: String, model: String,
+        systemPrompt: String, userPrompt: String,
+        onProgress: (@Sendable (Int) -> Void)?
+    ) async throws -> (text: String, stopReason: String?) {
         let body: [String: Any] = [
             "model": model,
             "max_tokens": 16384,
             "stream": true,
             "system": systemPrompt,
-            "messages": [
-                ["role": "user", "content": userPrompt]
-            ]
+            "messages": [["role": "user", "content": userPrompt]]
         ]
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: anthropicURL)
         request.httpMethod = "POST"
         // Streaming SSE : ce timeout devient un timeout d'INACTIVITÉ (temps max entre
         // deux chunks), pas un temps total. Les events (deltas + ping) arrivent en
         // continu, donc il ne se déclenche jamais en fonctionnement normal.
         request.timeoutInterval = 120
         request.setValue(key, forHTTPHeaderField: "x-api-key")
-        request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue(anthropicVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -230,25 +360,14 @@ struct ClaudeService {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch let error as URLError where error.code == .timedOut {
-            throw ClaudeError.apiError("Connexion à Claude interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
+            throw LLMError.apiError("Connexion interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw ClaudeError.apiError("Réponse réseau invalide.")
+            throw LLMError.apiError("Réponse réseau invalide.")
         }
         if http.statusCode != 200 {
-            var errorData = Data()
-            for try await b in bytes { errorData.append(b) }
-            let body = String(data: errorData, encoding: .utf8)?.prefix(250) ?? ""
-            let message: String
-            switch http.statusCode {
-            case 401: message = "Clé API Claude invalide ou révoquée. Vérifie-la dans Réglages."
-            case 429: message = "Limite de taux Claude atteinte. Réessaie dans une minute."
-            case 400: message = "Requête rejetée par Claude (400) : \(body)"
-            case 500..<600: message = "Service Claude indisponible (HTTP \(http.statusCode)). Réessaie plus tard."
-            default: message = "HTTP \(http.statusCode) — \(body)"
-            }
-            throw ClaudeError.apiError(message)
+            throw LLMError.apiError(try await httpErrorMessage(status: http.statusCode, bytes: bytes))
         }
 
         struct StreamEvent: Decodable {
@@ -274,45 +393,99 @@ struct ClaudeService {
                 }
             }
         } catch let error as URLError where error.code == .timedOut {
-            throw ClaudeError.apiError("Connexion à Claude interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
+            throw LLMError.apiError("Connexion interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
         }
+        return (fullText, stopReason)
+    }
 
-        let text = fullText
-        guard !text.isEmpty else {
-            throw ClaudeError.parsingError("réponse vide")
-        }
-        if stopReason == "max_tokens" {
-            throw ClaudeError.apiError("Réponse tronquée (max_tokens atteint) — transcript trop long pour être analysé en un seul passage. Raccourcis le transcript ou augmente max_tokens.")
-        }
+    // MARK: - Dialecte compatible OpenAI
 
-        var jsonText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if jsonText.hasPrefix("```") {
-            jsonText = jsonText.replacingOccurrences(of: "```json", with: "")
-            jsonText = jsonText.replacingOccurrences(of: "```", with: "")
-            jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func streamOpenAI(
+        key: String, model: String, baseURL: String,
+        systemPrompt: String, userPrompt: String,
+        onProgress: (@Sendable (Int) -> Void)?
+    ) async throws -> (text: String, stopReason: String?) {
+        guard let url = URL(string: baseURL + "/chat/completions") else {
+            throw LLMError.apiError("URL de base invalide.")
         }
-        if let first = jsonText.firstIndex(of: "{"), let last = jsonText.lastIndex(of: "}") {
-            jsonText = String(jsonText[first...last])
-        }
+        // Volontairement PAS de response_format : compat maximale avec les serveurs
+        // locaux ; le JSON est déjà exigé par le prompt.
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 16384,
+            "stream": true,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ]
+        ]
 
-        #if DEBUG
-        print("[ClaudeService] Raw response text (first 2000 chars):\n\(text.prefix(2000))")
-        print("[ClaudeService] Stop reason: \(stopReason ?? "nil")")
-        #endif
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        guard let jsonData = jsonText.data(using: .utf8) else {
-            throw ClaudeError.parsingError("encodage utf8")
-        }
-
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
         do {
-            let analysis = try JSONDecoder().decode(MeetingAnalysis.self, from: jsonData)
-            return analysis
-        } catch let decodingError as DecodingError {
-            let head = String(jsonText.prefix(1000))
-            let tail = jsonText.count > 1500 ? " … [FIN] " + String(jsonText.suffix(500)) : ""
-            throw ClaudeError.parsingError("\(decodingError) — stop_reason=\(stopReason ?? "nil") — Réponse: \(head)\(tail)")
-        } catch {
-            throw error
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch let error as URLError where error.code == .timedOut {
+            throw LLMError.apiError("Connexion interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw LLMError.apiError("Réponse réseau invalide.")
+        }
+        if http.statusCode != 200 {
+            throw LLMError.apiError(try await httpErrorMessage(status: http.statusCode, bytes: bytes))
+        }
+
+        struct StreamChunk: Decodable {
+            struct Choice: Decodable {
+                struct Delta: Decodable { let content: String? }
+                let delta: Delta?
+                let finish_reason: String?
+            }
+            let choices: [Choice]?
+        }
+
+        var fullText = ""
+        var finishReason: String?
+        do {
+            for try await line in bytes.lines {
+                guard line.hasPrefix("data:") else { continue }
+                let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                if payload == "[DONE]" { break }
+                guard let d = payload.data(using: .utf8),
+                      let chunk = try? JSONDecoder().decode(StreamChunk.self, from: d),
+                      let choice = chunk.choices?.first else { continue }
+                if let t = choice.delta?.content, !t.isEmpty {
+                    fullText += t
+                    onProgress?(fullText.count)
+                }
+                if let fr = choice.finish_reason { finishReason = fr }
+            }
+        } catch let error as URLError where error.code == .timedOut {
+            throw LLMError.apiError("Connexion interrompue (aucune réponse). Vérifie ta connexion et réessaie.")
+        }
+        return (fullText, finishReason)
+    }
+
+    // MARK: - Erreurs HTTP (partagé)
+
+    private static func httpErrorMessage(status: Int, bytes: URLSession.AsyncBytes) async throws -> String {
+        var errorData = Data()
+        for try await b in bytes { errorData.append(b) }
+        let body = String(data: errorData, encoding: .utf8)?.prefix(250) ?? ""
+        switch status {
+        case 401: return "Clé API invalide ou révoquée. Vérifie-la dans Réglages."
+        case 429: return "Limite de taux atteinte. Réessaie dans une minute."
+        case 400: return "Requête rejetée (400) : \(body)"
+        case 404: return "Endpoint introuvable (404) — vérifie l'URL de base et le modèle. \(body)"
+        case 500..<600: return "Service indisponible (HTTP \(status)). Réessaie plus tard."
+        default: return "HTTP \(status) — \(body)"
         }
     }
 }

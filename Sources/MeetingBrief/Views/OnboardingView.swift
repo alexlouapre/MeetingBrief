@@ -9,16 +9,21 @@ struct OnboardingView: View {
     @AppStorage(Prefs.slackEnabled) var slackEnabled: Bool = true
     @AppStorage(Prefs.favoriteSlackChannelIds) var favoriteChannelIdsString: String = ""
     @AppStorage(Prefs.lastSlackDestinationIds) var lastSlackDestinationIdsString: String = ""
+    @AppStorage(Prefs.llmProvider) var llmProvider: String = "anthropic"
+    @AppStorage(Prefs.llmModel) var llmModel: String = "claude-sonnet-5"
+    @AppStorage(Prefs.llmBaseURL) var llmBaseURL: String = ""
 
     @State private var currentPage = 0
-    @State private var claudeKey: String = ""
-    @State private var claudeTestResult: String?
-    @State private var testingClaude = false
+    @State private var apiKey: String = ""
+    @State private var keyTestResult: String?
+    @State private var testingKey = false
     @State private var slackToken: String = ""
     @State private var loadingChannels = false
     @Namespace private var glassNamespace
 
     private let pageCount = 7
+
+    private var provider: LLMProvider { LLMProvider(rawValue: llmProvider) ?? .anthropic }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,7 +45,7 @@ struct OnboardingView: View {
             footer
         }
         .onAppear {
-            claudeKey = SecretStore.get("claude_api_key") ?? ""
+            apiKey = SecretStore.get(LLMService.secretKeyName(for: provider)) ?? ""
             slackToken = SecretStore.get("slack_bot_token") ?? ""
         }
     }
@@ -53,7 +58,7 @@ struct OnboardingView: View {
         case 0: pastePage
         case 1: analyzePage
         case 2: slackIntroPage
-        case 3: claudeKeyPage
+        case 3: providerPage
         case 4: obsidianPage
         case 5: slackSetupPage
         default: readyPage
@@ -96,29 +101,60 @@ struct OnboardingView: View {
         )
     }
 
-    private var claudeKeyPage: some View {
-        setupPage(icon: "key", title: "Ta clé API Claude") {
-            Text("MeetingBrief appelle l'API Claude avec ta propre clé. Crée-la sur [console.anthropic.com](https://console.anthropic.com).")
-                .font(.callout)
-                .foregroundColor(.secondary)
+    private var providerPage: some View {
+        setupPage(icon: "key", title: "Fournisseur & modèle") {
+            Picker("Fournisseur", selection: $llmProvider) {
+                Text("Claude (Anthropic)").tag(LLMProvider.anthropic.rawValue)
+                Text("Compatible OpenAI").tag(LLMProvider.openaiCompatible.rawValue)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: llmProvider) {
+                apiKey = SecretStore.get(LLMService.secretKeyName(for: provider)) ?? ""
+                keyTestResult = nil
+            }
 
-            SecureField("sk-ant-…", text: $claudeKey)
+            if provider == .anthropic {
+                Text("MeetingBrief appelle l'API Claude avec ta propre clé. Crée-la sur [console.anthropic.com](https://console.anthropic.com).")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Tout serveur compatible OpenAI (OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Ollama/LM Studio en local).")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+
+            TextField(
+                provider == .anthropic ? "claude-sonnet-5" : "gpt-4o",
+                text: $llmModel
+            )
+            .textFieldStyle(.roundedBorder)
+
+            if provider == .openaiCompatible {
+                TextField("https://api.openai.com/v1", text: $llmBaseURL)
+                    .textFieldStyle(.roundedBorder)
+                Text("URL de base. Vide → https://api.openai.com/v1. Local Ollama : http://localhost:11434/v1.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            SecureField(provider == .anthropic ? "sk-ant-…" : "sk-…", text: $apiKey)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { SecretStore.set(claudeKey, for: "claude_api_key") }
+                .onSubmit { SecretStore.set(apiKey, for: LLMService.secretKeyName(for: provider)) }
 
             HStack(spacing: 10) {
-                Button(testingClaude ? "Test…" : "Tester la clé") {
-                    Task { await testClaudeKey() }
+                Button(testingKey ? "Test…" : "Tester la clé") {
+                    Task { await testAPIKey() }
                 }
-                .disabled(testingClaude || claudeKey.isEmpty)
-                if let result = claudeTestResult {
+                .disabled(testingKey || apiKey.isEmpty)
+                if let result = keyTestResult {
                     Text(result)
                         .font(.caption)
                         .foregroundColor(result.hasPrefix("✓") ? .green : .red)
                 }
             }
 
-            Text("Stockée en local uniquement (~/Library/Application Support/MeetingBrief/, permissions 600).")
+            Text("Clé stockée en local uniquement (~/Library/Application Support/MeetingBrief/, permissions 600).")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -314,7 +350,7 @@ struct OnboardingView: View {
 
     private var canGoNext: Bool {
         switch currentPage {
-        case 3: return !claudeKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case 3: return !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
         case 4: return !obsidianPath.trimmingCharacters(in: .whitespaces).isEmpty
         case 5: return !slackEnabled || !slackToken.trimmingCharacters(in: .whitespaces).isEmpty
         default: return true
@@ -323,7 +359,7 @@ struct OnboardingView: View {
 
     private func commitCurrentPage() {
         switch currentPage {
-        case 3: SecretStore.set(claudeKey, for: "claude_api_key")
+        case 3: SecretStore.set(apiKey, for: LLMService.secretKeyName(for: provider))
         case 5: if slackEnabled { SecretStore.set(slackToken, for: "slack_bot_token") }
         default: break
         }
@@ -345,16 +381,16 @@ struct OnboardingView: View {
     }
 
     @MainActor
-    private func testClaudeKey() async {
-        claudeTestResult = nil
-        SecretStore.set(claudeKey, for: "claude_api_key")
-        testingClaude = true
-        defer { testingClaude = false }
+    private func testAPIKey() async {
+        keyTestResult = nil
+        SecretStore.set(apiKey, for: LLMService.secretKeyName(for: provider))
+        testingKey = true
+        defer { testingKey = false }
         do {
-            try await ClaudeService.testKey()
-            claudeTestResult = "✓ Clé valide"
+            try await LLMService.testKey()
+            keyTestResult = "✓ Clé valide"
         } catch {
-            claudeTestResult = error.localizedDescription
+            keyTestResult = error.localizedDescription
         }
     }
 }
