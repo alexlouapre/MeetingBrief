@@ -10,7 +10,26 @@ curl -fsSL https://raw.githubusercontent.com/alexlouapre/MeetingBrief/main/scrip
 
 Ça vérifie les prérequis, clone le repo, compile en release, installe `MeetingBrief.app` dans `/Applications` et active le lancement auto à la session. Au premier lancement, un **onboarding guidé** te fait configurer la clé Claude, le dossier Obsidian et (optionnellement) Slack.
 
+Le script vérifie et **installe automatiquement** ce qui manque (dont les Xcode command-line tools). Il te demandera **une fois** ton mot de passe admin pour l'installation des outils système — c'est normal, macOS l'exige.
+
 > **Signature :** le build est compilé localement depuis les sources et signé ad-hoc. Comme le binaire n'est jamais téléchargé tel quel, il ne porte pas d'attribut quarantine — Gatekeeper ne bloque pas ce chemin d'installation.
+
+## Installer via ton assistant Claude (zéro terminal)
+
+Pas à l'aise avec le terminal ? Copie-colle ce bloc à ton assistant Claude (Claude Code, ou Claude dans le bureau) :
+
+> Installe l'app macOS MeetingBrief pour moi. Lance cette commande et suis-la jusqu'au bout :
+> ```
+> curl -fsSL https://raw.githubusercontent.com/alexlouapre/MeetingBrief/main/scripts/remote-install.sh | bash
+> ```
+> Si les Xcode command-line tools manquent, le script les installe tout seul via `softwareupdate` — il aura besoin de mon mot de passe admin une seule fois (demande-le-moi si besoin, ou dis-moi de taper `! sudo -v` pour l'autoriser). Si l'install bascule sur la fenêtre graphique, préviens-moi de cliquer « Installer ». Quand c'est fini, dis-moi que l'icône 🔍 doit apparaître dans ma barre des menus, puis guide-moi dans l'onboarding (fournisseur + clé API, dossier Obsidian, Slack optionnel).
+
+Ce que ton assistant fera pour toi :
+1. Vérifie macOS 26+ et installe les command-line tools si absents (mot de passe admin demandé une fois).
+2. Clone, compile et installe `MeetingBrief.app` dans `/Applications` + active le lancement auto.
+3. Te laisse la main pour l'onboarding (les clés API et réglages restent privés, jamais partagés).
+
+La seule chose que macOS ne peut **jamais** automatiser : ton mot de passe admin (ou un clic « Installer ») pour poser les outils système. Ton assistant te demandera ce geste unique au bon moment.
 
 ## Flow
 
@@ -34,7 +53,7 @@ Préfères-tu relire avant d'écrire la note ? Active **Réglages → Flux → �
 ## Prérequis
 
 - macOS 26 (Tahoe) ou supérieur
-- Xcode command-line tools : `xcode-select --install` (Swift 6.2+)
+- Xcode command-line tools (Swift 6.2+) — **installés automatiquement** par l'installeur si absents (mot de passe admin demandé une fois) ; sinon manuellement via `xcode-select --install`
 - Une clé API Claude (`sk-ant-…`) — [console.anthropic.com](https://console.anthropic.com) — ou la clé d'un fournisseur compatible OpenAI (voir [Modèle & fournisseur](#modèle--fournisseur))
 - Un Slack Bot Token (`xoxb-…`) — optionnel, voir ci-dessous
 

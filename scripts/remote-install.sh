@@ -12,12 +12,38 @@ if [ "$MACOS_MAJOR" -lt 26 ]; then
     exit 1
 fi
 
-# 2. Xcode command-line tools
+# 2. Xcode command-line tools — required to compile from source.
 if ! xcode-select -p >/dev/null 2>&1; then
-    echo "Error: Xcode command-line tools are not installed."
-    echo "Run:  xcode-select --install"
-    echo "…then re-run this installer."
-    exit 1
+    echo "→ Xcode command-line tools not found — installing (this can take a few minutes)…"
+
+    # Headless install via softwareupdate (no GUI click; prompts for the admin
+    # password once). The trigger file makes softwareupdate list the CLT package.
+    CLT_TRIGGER="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+    touch "$CLT_TRIGGER"
+    CLT_LABEL="$(softwareupdate -l 2>/dev/null \
+        | grep -E '^\s*\* Label:.*Command Line Tools' \
+        | sed -E 's/^[[:space:]]*\* Label:[[:space:]]*//' \
+        | tail -1)"
+
+    CLT_OK=0
+    if [ -n "$CLT_LABEL" ]; then
+        echo "→ Installing \"$CLT_LABEL\" (may prompt for your admin password)…"
+        if sudo softwareupdate -i "$CLT_LABEL" --verbose; then
+            CLT_OK=1
+        fi
+    fi
+    rm -f "$CLT_TRIGGER"
+
+    if [ "$CLT_OK" -ne 1 ] || ! xcode-select -p >/dev/null 2>&1; then
+        # Fallback: the graphical installer (no password, but needs a manual click).
+        echo "→ Headless install unavailable — opening the graphical installer instead."
+        xcode-select --install 2>/dev/null || true
+        echo ""
+        echo "A macOS dialog should have opened. Click \"Install\", accept the licence,"
+        echo "and wait for it to finish. Then re-run this installer."
+        exit 1
+    fi
+    echo "✓ Command-line tools installed."
 fi
 
 # 3. Swift 6.2+
